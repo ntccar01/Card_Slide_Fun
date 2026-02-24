@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>富腦袋 Tinder - 資產負債大考驗</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { overscroll-behavior-y: contain; } /* 防止手機下拉更新 */
+        
+        /* 卡片動畫 */
+        .card-container { perspective: 1000px; }
+        .swipe-left { transform: translateX(-150%) rotate(-15deg); opacity: 0; transition: all 0.4s ease-out; }
+        .swipe-right { transform: translateX(150%) rotate(15deg); opacity: 0; transition: all 0.4s ease-out; }
+        .reset-card { transform: translateX(0) rotate(0); opacity: 1; transition: none; }
+        
+        /* 震動動畫 (答錯用) */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+            20%, 40%, 60%, 80% { transform: translateX(10px); }
+        }
+        .animate-shake { animation: shake 0.5s; }
+
+        /* 彈出動畫 */
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop-in { animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-800 font-sans h-screen overflow-hidden flex flex-col selection:bg-blue-200">
+
+    <!-- 頂部進度條與分數 -->
+    <header class="bg-slate-800 text-white p-4 shadow-md z-10 hidden" id="game-header">
+        <div class="max-w-md mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-fire text-orange-500"></i>
+                <span class="font-bold">題數：<span id="progress-text">1/20</span></span>
+            </div>
+            <div class="bg-slate-700 px-3 py-1 rounded-full font-bold">
+                得分：<span id="score-display" class="text-yellow-400">0</span>
+            </div>
+        </div>
+        <div class="max-w-md mx-auto mt-2 bg-slate-700 rounded-full h-2">
+            <div id="progress-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 5%;"></div>
+        </div>
+    </header>
+
+    <!-- 主遊戲區 -->
+    <main class="flex-1 relative max-w-md mx-auto w-full flex flex-col justify-center items-center p-4">
+        
+        <!-- 畫面 1：開始畫面 -->
+        <div id="start-screen" class="text-center bg-white p-8 rounded-3xl shadow-2xl w-full animate-pop-in">
+            <div class="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i class="fa-solid fa-brain text-5xl text-blue-600"></i>
+            </div>
+            <h1 class="text-3xl font-black mb-2">富腦袋 Tinder</h1>
+            <p class="text-slate-500 mb-8">資產與負債的直覺大考驗</p>
+            
+            <div class="bg-slate-50 p-4 rounded-xl text-left text-sm mb-8 space-y-3">
+                <p><i class="fa-solid fa-hand-pointer text-slate-400 w-5"></i> 規則超簡單：</p>
+                <p><b class="text-red-500">往左滑 (或按左鍵) 👈</b>：會把錢從口袋拿走的「負債」</p>
+                <p><b class="text-green-600">往右滑 (或按右鍵) 👉</b>：會把錢放進口袋的「資產」</p>
+                <p class="text-slate-400 mt-2 text-xs text-center border-t pt-2">準備好測試你的財商了嗎？</p>
+            </div>
+
+            <button onclick="startGame()" class="w-full bg-blue-600 text-white font-bold text-lg py-4 rounded-full shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
+                開始測驗
+            </button>
+        </div>
+
+        <!-- 畫面 2：遊戲卡片區 -->
+        <div id="game-screen" class="w-full h-full flex flex-col hidden">
+            <!-- 卡片容器 (支援手勢滑動) -->
+            <div class="flex-1 relative flex items-center justify-center card-container mt-4 mb-4" id="swipe-area">
+                <div id="question-card" class="absolute w-full bg-white rounded-3xl shadow-xl border-2 border-slate-100 overflow-hidden flex flex-col h-[60vh] max-h-[450px]">
+                    <div class="bg-slate-50 h-2/5 flex items-center justify-center border-b border-slate-100">
+                        <i id="card-icon" class="fa-solid fa-question text-7xl text-slate-300 drop-shadow-md"></i>
+                    </div>
+                    <div class="p-6 flex-1 flex flex-col justify-center text-center">
+                        <h2 id="card-text" class="text-2xl font-bold leading-snug text-slate-800">
+                            載入題目中...
+                        </h2>
+                    </div>
+                    
+                    <!-- 浮水印提示 (左右滑時顯示) -->
+                    <div id="stamp-liability" class="absolute top-10 right-8 border-4 border-red-500 text-red-500 font-black text-3xl px-4 py-1 rounded-lg transform rotate-12 opacity-0 transition-opacity">負債</div>
+                    <div id="stamp-asset" class="absolute top-10 left-8 border-4 border-green-500 text-green-500 font-black text-3xl px-4 py-1 rounded-lg transform -rotate-12 opacity-0 transition-opacity">資產</div>
+                </div>
+            </div>
+
+            <!-- 底部按鈕操作區 -->
+            <div class="flex justify-center gap-6 pb-6">
+                <button onclick="handleAnswer('liability')" class="w-20 h-20 bg-white rounded-full shadow-lg border-4 border-slate-100 text-red-500 text-3xl flex items-center justify-center hover:bg-red-50 hover:border-red-200 active:scale-90 transition-all group">
+                    <i class="fa-solid fa-xmark group-hover:scale-125 transition-transform"></i>
+                </button>
+                <button onclick="handleAnswer('asset')" class="w-20 h-20 bg-white rounded-full shadow-lg border-4 border-slate-100 text-green-500 text-3xl flex items-center justify-center hover:bg-green-50 hover:border-green-200 active:scale-90 transition-all group">
+                    <i class="fa-solid fa-check group-hover:scale-125 transition-transform"></i>
+                </button>
+            </div>
+            <div class="flex justify-center gap-16 text-xs font-bold text-slate-400 pb-2">
+                <span class="text-red-400 mr-2">👈 負債 (扣錢)</span>
+                <span class="text-green-400 ml-2">資產 (賺錢) 👉</span>
+            </div>
+        </div>
+
+        <!-- 畫面 3：結算畫面 -->
+        <div id="result-screen" class="text-center bg-white p-8 rounded-3xl shadow-2xl w-full hidden">
+            <h2 class="text-2xl font-bold text-slate-600 mb-2">測驗結束！</h2>
+            <p class="text-sm text-slate-400 mb-6">你的財商基因鑑定結果出爐</p>
+            
+            <div class="text-7xl mb-4" id="rank-emoji">👑</div>
+            <h3 class="text-3xl font-black mb-2 text-slate-800" id="rank-title">華爾街少年股神</h3>
+            
+            <div class="bg-slate-100 rounded-2xl p-6 my-6">
+                <p class="text-slate-500 text-sm mb-1">最終得分</p>
+                <p class="text-5xl font-black text-blue-600"><span id="final-score">20</span><span class="text-2xl text-slate-400">/20</span></p>
+            </div>
+
+            <p class="text-slate-600 mb-8 leading-relaxed" id="rank-desc">
+                太神啦！你完全看透了金錢的本質，你已經具備富爸爸的腦袋了！繼續保持！
+            </p>
+
+            <button onclick="location.reload()" class="w-full bg-slate-800 text-white font-bold text-lg py-4 rounded-full shadow-lg hover:bg-slate-900 active:scale-95 transition-all flex justify-center items-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> 再玩一次
+            </button>
+        </div>
+
+    </main>
+
+    <!-- 彈出回饋視窗 (Modal) -->
+    <div id="feedback-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
+        <div id="feedback-card" class="bg-white w-11/12 max-w-sm rounded-3xl overflow-hidden shadow-2xl transform scale-95 transition-transform duration-300">
+            <div id="feedback-header" class="p-6 text-center text-white">
+                <div id="feedback-icon-container" class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i id="feedback-icon" class="fa-solid fa-check text-5xl"></i>
+                </div>
+                <h3 id="feedback-title" class="text-2xl font-black tracking-wide">答對了！</h3>
+            </div>
+            <div class="p-6">
+                <div class="mb-6">
+                    <p class="text-xs text-slate-400 font-bold mb-1">剛剛的題目：</p>
+                    <p id="feedback-question" class="text-slate-700 font-medium"></p>
+                </div>
+                <div class="bg-slate-50 border-l-4 border-slate-300 p-4 rounded-r-lg">
+                    <p class="text-xs text-slate-500 font-bold mb-2"><i class="fa-solid fa-chalkboard-user"></i> 老師解析：</p>
+                    <p id="feedback-desc" class="text-sm text-slate-800 leading-relaxed font-medium"></p>
+                </div>
+                <button onclick="nextQuestion()" class="w-full mt-6 bg-slate-800 text-white font-bold py-3 rounded-xl shadow hover:bg-slate-900 active:scale-95 transition-all">
+                    下一題 <i class="fa-solid fa-arrow-right ml-1"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 題庫資料 (20題) ---
+        const QUESTIONS = [
+            { id: 1, type: 'liability', icon: 'fa-mobile-screen', text: '分期 36 期買最新款 iPhone 16 Pro Max', desc: '每個月都要繳分期款，加上高昂的電信費，而且明年出新機它就跌價了！科技產品是折舊最快的負債。' },
+            { id: 2, type: 'liability', icon: 'fa-gamepad', text: '手遊大課金，為了抽中「限定版 SSR 角色」', desc: '爽度只有抽到的那一瞬間！遊戲退坑或伺服器關閉後，這筆錢直接歸零，完全無法幫你賺回半毛錢。' },
+            { id: 3, type: 'asset', icon: 'fa-arrow-trend-up', text: '每個月打工拿 3000 元買高股息 ETF (如00878)', desc: '雖然很無聊，但這筆錢會在你睡覺、打電動的時候，默默幫你生出「股息」放進口袋，這就是純度 100% 的資產。' },
+            { id: 4, type: 'liability', icon: 'fa-ticket', text: '買韓國女團的 VIP 演唱會門票與全套周邊', desc: '老師知道這對心靈很重要！但在財務定義上，它不會產生收入，還把你辛苦打工的錢掏空了。偶爾為之可以，但要知道它是負債。' },
+            { id: 5, type: 'liability', icon: 'fa-motorcycle', text: '花 5 萬元大改機車的排氣管與避震器', desc: '除了耍帥，它只會增加你的油耗、保養費，甚至還會吃上噪音罰單！這是典型的吞錢怪獸。' },
+            { id: 6, type: 'asset', icon: 'fa-motorcycle', text: '買一台二手 Gogoro 用來跑 Foodpanda / UberEats', desc: '聰明！雖然機車會折舊，但你把它變成了「生財工具」。只要跑外送賺的錢大於買車和充電的錢，它就是資產！' },
+            { id: 7, type: 'liability', icon: 'fa-shoe-prints', text: '排隊搶到限量版名牌球鞋，每天穿去學校炫耀', desc: '鞋子一落地、一有摺痕，價值就瞬間腰斬。炫耀完之後，它不會幫你賺進任何一毛錢。' },
+            { id: 8, type: 'asset', icon: 'fa-box-archive', text: '排隊搶到限量版球鞋，連鞋盒包膜放進防潮箱等漲價', desc: '很有生意頭腦！你把它當成「投資商品」，利用稀缺性在二手市場高價轉賣，把更多的錢放回口袋。' },
+            { id: 9, type: 'asset', icon: 'fa-id-card', text: '花錢報名補習，考取「汽車修護乙級技術士」證照', desc: '最強的資產就是你的腦袋！這張證照能讓你在未來求職時底薪比別人高，這筆報名費會化為你未來的持續收入。' },
+            { id: 10, type: 'asset', icon: 'fa-toolbox', text: '花錢買高階工具組，在放學後幫同學換機油、修車', desc: '創業家思維！你買的不是工具，而是「賺錢的系統」。只要一直有同學找你修車，這套工具就是會生金蛋的鵝。' },
+            { id: 11, type: 'liability', icon: 'fa-bag-shopping', text: '分期付款買名牌包包，當作禮物送給另一半', desc: '愛情無價，但包包是負債！而且分期付款的利息非常可怕，不要為了面子而讓自己陷入長期的財務黑洞。' },
+            { id: 12, type: 'asset', icon: 'fa-video', text: '經營一個專門教人「如何保養機車」的 IG/TikTok 帳號', desc: '數位資產！雖然一開始沒錢，但當你建立起流量，這些影片會24小時在網路上幫你工作，甚至帶來業配收入。' },
+            { id: 13, type: 'liability', icon: 'fa-ghost', text: '花了 2000 元夾滿整床的動漫公仔，擺在房間長灰塵', desc: '夾的當下很爽，但這些公仔不會幫你賺錢，甚至搬家時還覺得佔空間。這 2000 元永遠離開你的口袋了。' },
+            { id: 14, type: 'liability', icon: 'fa-helmet-safety', text: '信用小白不用怕！用「無卡分期」買 3 萬元的進口安全帽', desc: '超級大魔王！無卡分期的隱藏利息極高，為了帥氣，你未來幾個月打工的錢都被提早扣光了，標準的負債。' },
+            { id: 15, type: 'liability', icon: 'fa-play', text: '綁定卡片訂閱 Netflix 和 Spotify，但平常根本沒在用', desc: '每個月自動扣款幾百塊好像很少，但這些「微型負債」就像水管漏水，不知不覺把你的財富抽乾。' },
+            { id: 16, type: 'asset', icon: 'fa-piggy-bank', text: '把打工賺的 1 萬元，存進有 3% 高利活存的數位銀行帳戶', desc: '非常聰明的第一步！雖然利息不多，但這筆錢已經開始「自己工作」，每個月都會自動生出零用錢給你。' },
+            { id: 17, type: 'asset', icon: 'fa-mobile-retro', text: '在網路上用 1000 元收購故障手機，自己修好後賣 3000 元', desc: '這就是技術的力量！你把「壞掉的負債」透過你的雙手變成了「資產」，創造了 2000 元的現金流入。' },
+            { id: 18, type: 'asset', icon: 'fa-capsules', text: '湊幾千塊跟朋友合資買一台「扭蛋機」，放夜市門口給路人轉', desc: '恭喜你晉升企業主！你不需一直站在那裡，扭蛋機 24 小時都在幫你賺路人的錢，這就是被動現金流。' },
+            { id: 19, type: 'liability', icon: 'fa-pills', text: '看到網紅直播帶貨，腦波一弱買了超昂貴的「減肥神藥」', desc: '衝動是魔鬼！買來通常吃兩天就放在角落過期，它不僅拿走你的錢，還無法給你承諾的效果。' },
+            { id: 20, type: 'liability', icon: 'fa-cat', text: '花了兩萬塊買名種貓，每個月還要買進口罐頭跟貓砂', desc: '在「財務定義」上，牠每個月都會持續消耗你的金錢，屬於負債。(這告訴我們，買負債前要確保自己有資產來養它！)' }
+        ];
+
+        // --- 遊戲狀態 ---
+        let currentIndex = 0;
+        let score = 0;
+        let isAnimating = false; // 防止重複點擊
+
+        // DOM 元素
+        const screenStart = document.getElementById('start-screen');
+        const screenGame = document.getElementById('game-screen');
+        const screenResult = document.getElementById('result-screen');
+        const gameHeader = document.getElementById('game-header');
+        const cardElement = document.getElementById('question-card');
+        const cardIcon = document.getElementById('card-icon');
+        const cardText = document.getElementById('card-text');
+        
+        // 滑動相關變數
+        let touchStartX = 0;
+        let touchEndX = 0;
+        const swipeArea = document.getElementById('swipe-area');
+
+        // --- 初始化與開始 ---
+        function startGame() {
+            // 洗牌題目 (若老師希望題目固定順序，可註解這行)
+            // QUESTIONS.sort(() => Math.random() - 0.5); 
+            
+            currentIndex = 0;
+            score = 0;
+            
+            screenStart.classList.add('hidden');
+            screenGame.classList.remove('hidden');
+            gameHeader.classList.remove('hidden');
+            
+            loadQuestion();
+        }
+
+        // --- 載入題目 ---
+        function loadQuestion() {
+            if (currentIndex >= QUESTIONS.length) {
+                showResultScreen();
+                return;
+            }
+
+            const q = QUESTIONS[currentIndex];
+            
+            // 重置卡片狀態
+            cardElement.className = 'absolute w-full bg-white rounded-3xl shadow-xl border-2 border-slate-100 overflow-hidden flex flex-col h-[60vh] max-h-[450px] reset-card';
+            document.getElementById('stamp-liability').style.opacity = '0';
+            document.getElementById('stamp-asset').style.opacity = '0';
+            
+            // 載入內容
+            cardIcon.className = `fa-solid ${q.icon} text-7xl text-blue-500 drop-shadow-md`;
+            cardText.innerText = q.text;
+
+            // 更新進度條
+            document.getElementById('progress-text').innerText = `${currentIndex + 1}/${QUESTIONS.length}`;
+            document.getElementById('progress-bar').style.width = `${((currentIndex) / QUESTIONS.length) * 100}%`;
+            document.getElementById('score-display').innerText = score;
+            
+            isAnimating = false;
+        }
+
+        // --- 處理作答 (按鈕或滑動) ---
+        function handleAnswer(choice) {
+            if (isAnimating) return;
+            isAnimating = true;
+
+            const q = QUESTIONS[currentIndex];
+            const isCorrect = choice === q.type;
+
+            // 1. 卡片飛出動畫
+            if (choice === 'liability') {
+                document.getElementById('stamp-liability').style.opacity = '1';
+                cardElement.classList.add('swipe-left');
+            } else {
+                document.getElementById('stamp-asset').style.opacity = '1';
+                cardElement.classList.add('swipe-right');
+            }
+
+            // 2. 計分
+            if (isCorrect) {
+                score++;
+                document.getElementById('score-display').innerText = score;
+            } else {
+                // 答錯時畫面震動提示
+                document.body.classList.add('animate-shake');
+                setTimeout(() => document.body.classList.remove('animate-shake'), 500);
+            }
+
+            // 3. 延遲一下顯示回饋 Modal，讓飛出動畫跑完
+            setTimeout(() => {
+                showFeedbackModal(isCorrect, q);
+            }, 300);
+        }
+
+        // --- 顯示回饋 Modal ---
+        function showFeedbackModal(isCorrect, q) {
+            const modal = document.getElementById('feedback-modal');
+            const card = document.getElementById('feedback-card');
+            const header = document.getElementById('feedback-header');
+            const icon = document.getElementById('feedback-icon');
+            const title = document.getElementById('feedback-title');
+            
+            // 設定 Modal 內容
+            document.getElementById('feedback-question').innerText = q.text;
+            document.getElementById('feedback-desc').innerText = q.desc;
+
+            // 根據對錯更換樣式
+            if (isCorrect) {
+                header.className = 'p-6 text-center text-white bg-green-500';
+                icon.className = 'fa-solid fa-check text-5xl text-white';
+                title.innerText = '觀念正確！';
+            } else {
+                header.className = 'p-6 text-center text-white bg-red-500';
+                icon.className = 'fa-solid fa-xmark text-5xl text-white';
+                title.innerText = '哎呀，搞錯了！';
+                
+                // 修正提示：告訴他正確答案
+                const correctTypeStr = q.type === 'asset' ? '資產' : '負債';
+                document.getElementById('feedback-desc').innerHTML = `<span class="text-red-500 font-bold mb-1 block">⚠️ 其實這是一個「${correctTypeStr}」！</span>` + q.desc;
+            }
+
+            // 顯示 Modal (帶動畫)
+            modal.classList.remove('hidden');
+            // 強制重繪以觸發 transition
+            void modal.offsetWidth;
+            modal.classList.add('opacity-100');
+            card.classList.replace('scale-95', 'scale-100');
+        }
+
+        // --- 進入下一題 ---
+        function nextQuestion() {
+            const modal = document.getElementById('feedback-modal');
+            const card = document.getElementById('feedback-card');
+            
+            // 隱藏 Modal
+            modal.classList.remove('opacity-100');
+            card.classList.replace('scale-100', 'scale-95');
+            
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                currentIndex++;
+                loadQuestion();
+            }, 300);
+        }
+
+        // --- 顯示最終結算畫面 ---
+        function showResultScreen() {
+            screenGame.classList.add('hidden');
+            gameHeader.classList.add('hidden');
+            screenResult.classList.remove('hidden');
+            screenResult.classList.add('animate-pop-in');
+
+            document.getElementById('final-score').innerText = score;
+
+            let rankEmoji = '';
+            let rankTitle = '';
+            let rankDesc = '';
+
+            if (score <= 6) {
+                rankEmoji = '🥬';
+                rankTitle = '被收割的綠油油韭菜';
+                rankDesc = '慘！商人的最愛，你的錢都被別人的慾望陷阱騙走了。老師上課要認真聽，快把「資產」的觀念建立起來！';
+            } else if (score <= 14) {
+                rankEmoji = '👷‍♂️';
+                rankTitle = '辛苦的打工戰士';
+                rankDesc = '觀念不錯！你知道什麼是資產，但偶爾還是會被慾望騙走錢。只要減少衝動消費，你離財富自由就不遠了！';
+            } else {
+                rankEmoji = '👑';
+                rankTitle = '華爾街少年股神';
+                rankDesc = '太神啦！你完全看透了金錢的本質，不容易被外表欺騙。你已經具備富爸爸的腦袋了，保持下去！';
+            }
+
+            document.getElementById('rank-emoji').innerText = rankEmoji;
+            document.getElementById('rank-title').innerText = rankTitle;
+            document.getElementById('rank-desc').innerText = rankDesc;
+        }
+
+        // --- 手勢滑動偵測邏輯 (Touch Events) ---
+        swipeArea.addEventListener('touchstart', (e) => {
+            if(isAnimating) return;
+            touchStartX = e.changedTouches[0].screenX;
+            // 取消卡片的動畫過渡，讓它跟著手指動 (這邊為簡化邏輯，僅偵測滑動結束)
+        }, {passive: true});
+
+        swipeArea.addEventListener('touchend', (e) => {
+            if(isAnimating) return;
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        }, {passive: true});
+
+        function handleSwipe() {
+            const swipeDistance = touchEndX - touchStartX;
+            const threshold = 50; // 觸發滑動的最小距離
+
+            if (swipeDistance > threshold) {
+                // 往右滑 -> 資產
+                handleAnswer('asset');
+            } else if (swipeDistance < -threshold) {
+                // 往左滑 -> 負債
+                handleAnswer('liability');
+            }
+            // 若距離不夠，則什麼都不做
+        }
+
+    </script>
+</body>
+</html>
